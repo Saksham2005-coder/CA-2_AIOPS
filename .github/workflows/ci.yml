@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Build Docker image
+        run: docker build -t titanic-api .
+
+      - name: Run container
+        run: docker run -d -p 8000:8000 --name api titanic-api
+
+      - name: Wait for API to be ready
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8000/ > /dev/null; then
+              echo "API is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not start"
+          exit 1
+
+      - name: Smoke test endpoints
+        run: |
+          curl -f http://localhost:8000/
+          curl -f -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"Pclass":1,"Sex":"female","Age":25,"SibSp":0,"Parch":0,"Fare":50,"Embarked":"S"}'
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs api
